@@ -1,0 +1,39 @@
+from django.urls import path
+from .api.views import (
+    # OTP and Phone Verification
+    SendOTPView, VerifyPhoneRegistrationView,
+    
+    # Registration Flow
+    CompleteProfileView,
+    
+    # Login Options
+    PhoneLoginView,
+    
+    # User Management
+    UserLogoutView, UserProfileView, CheckUserExistsView,
+    user_dashboard, user_statistics
+)
+
+app_name = 'users'
+
+urlpatterns = [
+    # REGISTRATION FLOW (Step by step)
+    # Step 1: Send OTP to phone number
+    path('send-otp/', SendOTPView.as_view(), name='send_otp'),
+    # Step 2: Verify OTP and create account
+    path('verify-phone-registration/', VerifyPhoneRegistrationView.as_view(), name='verify_phone_registration'),
+    # Step 3: Complete profile
+    path('complete-profile/', CompleteProfileView.as_view(), name='complete_profile'),
+    
+    # LOGIN OPTIONS
+    path('login/phone/', PhoneLoginView.as_view(), name='phone_login'),
+    path('logout/', UserLogoutView.as_view(), name='logout'),
+    
+    # USER MANAGEMENT
+    path('profile/', UserProfileView.as_view(), name='profile'),
+    path('dashboard/', user_dashboard, name='dashboard'),
+    
+    # UTILITY ENDPOINTS
+    path('check-user/', CheckUserExistsView.as_view(), name='check_user'),
+    path('statistics/', user_statistics, name='statistics'),
+]

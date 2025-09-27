@@ -1,0 +1,124 @@
+from django.db import models
+from django.contrib.auth import get_user_model
+from PIL import Image
+
+# Get the custom user model (or default User if not customized)
+User = get_user_model()
+
+# Choices for the quantity unit
+UNIT_CHOICES = (
+    ('KG', 'Kilogram'),
+    ('QUINTAL', 'Quintal (100 Kg)'),
+    ('TON', 'Metric Ton'),
+    ('DOZEN', 'Dozen'),
+    ('UNIT', 'Per Piece/Unit'),
+)
+
+
+class Category(models.Model):
+    """Product categories like Fruits, Vegetables, Grains, etc."""
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "Categories"
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class Product(models.Model):
+    """
+    Main model for a seller's produce listing.
+    """
+    # 1. Backend/Auth Fields
+    seller = models.ForeignKey(User, on_delete=models.CASCADE, related_name='products', help_text="The user who created this listing.")
+    is_published = models.BooleanField(default=True, help_text="Set to False to unlist the product.")
+    
+    # 2. Product Information
+    name = models.CharField(max_length=100, help_text="Name of the produce (e.g., Tomato).")
+    variety = models.CharField(max_length=100, blank=True, null=True, help_text="Specific variety (e.g., Heirloom Tomato).")
+    description = models.TextField(help_text="Detailed description, quality, and farming methods.")
+    
+    # 3. Pricing & Quantity
+    quantity_available = models.DecimalField(max_digits=10, decimal_places=2, help_text="Total quantity available for sale.")
+    unit = models.CharField(max_length=20, choices=UNIT_CHOICES, default='KG', help_text="The unit of measurement (e.g., KG, Quintal).")
+    price_per_unit = models.DecimalField(max_digits=10, decimal_places=2, help_text="Price in Rupees per unit.")
+    min_order_quantity = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True, help_text="Optional minimum quantity a buyer must order.")
+    
+    # 4. Target Buyers
+    target_mandi_owners = models.BooleanField(default=False, help_text="Target Mandi Owners/Wholesalers.")
+    target_shopkeepers = models.BooleanField(default=False, help_text="Target Shopkeepers/Local Retailers.")
+    target_communities = models.BooleanField(default=False, help_text="Target Community Groups/Cooperatives.")
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.name} ({self.seller.username})"
+
+    @property
+    def total_value(self):
+        """Calculate total value of available stock"""
+        return self.price_per_unit * self.quantity_available
+
+    @property
+    def status(self):
+        """Determine product status based on availability"""
+        if not self.is_published:
+            return 'inactive'
+        elif self.quantity_available <= 0:
+            return 'sold_out'
+        else:
+            return 'available'
+
+    @property
+    def target_buyers_display(self):
+        """Get display string for target buyers"""
+        targets = []
+        if self.target_mandi_owners:
+            targets.append('Mandi Owners')
+        if self.target_shopkeepers:
+            targets.append('Shopkeepers')
+        if self.target_communities:
+            targets.append('Communities')
+        return ', '.join(targets) if targets else 'All Buyers'
+    
+
+class ProductImage(models.Model):
+    """
+    Model to handle multiple images for a product.
+    """
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='images')
+    image = models.ImageField(upload_to='product_images/%Y/%m/%d/')
+    caption = models.CharField(max_length=255, blank=True)
+    
+    class Meta:
+        verbose_name_plural = "Product Images"
+        
+    def __str__(self):
+        return f"Image for {self.product.name}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        
+        # Resize image if it exists
+        if self.image:
+            self.resize_image(self.image.path)
+
+    def resize_image(self, image_path, max_size=(800, 800)):
+        """Resize image to optimize storage"""
+        try:
+            with Image.open(image_path) as img:
+                if img.size[0] > max_size[0] or img.size[1] > max_size[1]:
+                    img.thumbnail(max_size, Image.Resampling.LANCZOS)
+                    img.save(image_path, optimize=True, quality=85)
+        except Exception as e:
+            print(f"Error resizing image: {e}")
