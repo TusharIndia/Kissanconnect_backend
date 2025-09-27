@@ -31,15 +31,14 @@ class PhoneRegistrationSerializer(serializers.Serializer):
 class ProfileCompletionSerializer(serializers.ModelSerializer):
     """Step 2: Complete user profile after phone verification with optional Google/Facebook linking"""
     mobile_number = serializers.CharField(max_length=15, write_only=True)
-    google_access_token = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    facebook_access_token = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    # Removed social token fields: linking should happen after profile completion via a dedicated endpoint
     
     class Meta:
         model = CustomUser
         fields = [
             'mobile_number', 'full_name', 'user_type', 'buyer_category', 'email',
             'address', 'city', 'state', 'pincode', 'latitude', 'longitude',
-            'google_access_token', 'facebook_access_token'
+            # social linking removed from profile completion
         ]
         extra_kwargs = {
             'mobile_number': {'write_only': True, 'required': True},
@@ -50,8 +49,7 @@ class ProfileCompletionSerializer(serializers.ModelSerializer):
             'state': {'required': True},
             'pincode': {'required': True},
             'email': {'required': False},
-            'google_access_token': {'write_only': True, 'required': False},
-            'facebook_access_token': {'write_only': True, 'required': False},
+            # social linking removed from profile completion
         }
     
     def validate_mobile_number(self, value):
@@ -87,8 +85,7 @@ class ProfileCompletionSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         user_type = attrs.get('user_type')
         buyer_category = attrs.get('buyer_category')
-        google_token = attrs.get('google_access_token')
-        facebook_token = attrs.get('facebook_access_token')
+    # social tokens are not part of the profile completion payload
         
         if user_type == 'smart_buyer' and not buyer_category:
             raise serializers.ValidationError({
@@ -98,26 +95,7 @@ class ProfileCompletionSerializer(serializers.ModelSerializer):
         if user_type == 'smart_seller' and buyer_category:
             attrs['buyer_category'] = None
         
-        # Validate social tokens if provided
-        if google_token:
-            google_data = self.verify_google_token(google_token)
-            if not google_data:
-                raise serializers.ValidationError({
-                    'google_access_token': 'Invalid Google access token'
-                })
-            attrs['google_user_data'] = google_data
-        
-        if facebook_token:
-            facebook_data = self.verify_facebook_token(facebook_token)
-            if not facebook_data:
-                raise serializers.ValidationError({
-                    'facebook_access_token': 'Invalid Facebook access token'
-                })
-            attrs['facebook_user_data'] = facebook_data
-        
-        # Remove tokens from attrs since they're just for validation
-        attrs.pop('google_access_token', None)
-        attrs.pop('facebook_access_token', None)
+        # No social token validation here
         attrs.pop('mobile_number', None)
         
         return attrs

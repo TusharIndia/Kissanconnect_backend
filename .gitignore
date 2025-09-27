@@ -1,3 +1,32 @@
+# Django backend ignores
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+env/
+venv/
+.venv
+
+# Database
+db.sqlite3
+db.sqlite3-journal
+
+# Local environment
+.env
+.env.*
+.env.local
+local_settings.py
+
+# Static and media
+staticfiles/
+media/
+
+# Django migrations cache
+*.py[cod]
+.cache/
+
+# VS Code
+.vscode/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

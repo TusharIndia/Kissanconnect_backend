@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.decorators.csrf import csrf_exempt
 from .api.views import (
     # OTP and Phone Verification
     SendOTPView, VerifyPhoneRegistrationView,
@@ -12,6 +13,8 @@ from .api.views import (
     # User Management
     UserLogoutView, UserProfileView, CheckUserExistsView,
     user_dashboard, user_statistics
+    , OAuthCallbackView, OAuthTokenView
+    , LinkSocialView
 )
 
 app_name = 'users'
@@ -36,4 +39,8 @@ urlpatterns = [
     # UTILITY ENDPOINTS
     path('check-user/', CheckUserExistsView.as_view(), name='check_user'),
     path('statistics/', user_statistics, name='statistics'),
+    # OAuth endpoints used by frontend
+    path('auth/oauth/callback/', csrf_exempt(OAuthCallbackView.as_view()), name='oauth_callback'),
+    path('auth/oauth/token/', csrf_exempt(OAuthTokenView.as_view()), name='oauth_token'),
+    path('auth/oauth/link/', (LinkSocialView.as_view()), name='oauth_link'),
 ]

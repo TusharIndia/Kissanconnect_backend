@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,12 +21,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-n-#+*mpf*gz!(3)u_)^$ea_nl_)-7pa!mc@g_opx!54g6l6@lu'
+# Read from environment; fall back to the existing hard-coded key for dev
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-n-#+*mpf*gz!(3)u_)^$ea_nl_)-7pa!mc@g_opx!54g6l6@lu')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('1', 'true', 'yes')
 
-ALLOWED_HOSTS = []
+# ALLOWED_HOSTS can be provided as comma-separated list in env
+ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', '').split(',') if os.getenv('DJANGO_ALLOWED_HOSTS') else []
 
 
 # Application definition
@@ -243,7 +246,31 @@ SOCIALACCOUNT_PROVIDERS = {
 
 # Social Auth API Keys (to be set in environment variables in production)
 # These are dummy values - replace with actual keys
-GOOGLE_OAUTH2_CLIENT_ID = 'your-google-client-id'
-GOOGLE_OAUTH2_CLIENT_SECRET = 'your-google-client-secret'
-FACEBOOK_APP_ID = 'your-facebook-app-id'
-FACEBOOK_APP_SECRET = 'your-facebook-app-secret'
+# Read social auth keys from environment; fall back to placeholders when missing
+GOOGLE_OAUTH2_CLIENT_ID = os.getenv('GOOGLE_OAUTH2_CLIENT_ID', 'your-google-client-id')
+GOOGLE_OAUTH2_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH2_CLIENT_SECRET', '')
+FACEBOOK_APP_ID = os.getenv('FACEBOOK_APP_ID', 'your-facebook-app-id')
+FACEBOOK_APP_SECRET = os.getenv('FACEBOOK_APP_SECRET', '')
+
+# Load .env.local automatically in development if python-dotenv is installed
+try:
+    from dotenv import load_dotenv
+    # Load environment variables from project .env.local (if present)
+    DOTENV_PATH = BASE_DIR / 'kissanmart' / '.env.local'
+    load_dotenv(DOTENV_PATH)
+    # Re-read values in case they were loaded from .env.local
+    GOOGLE_OAUTH2_CLIENT_ID = os.getenv('GOOGLE_OAUTH2_CLIENT_ID', GOOGLE_OAUTH2_CLIENT_ID)
+    GOOGLE_OAUTH2_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH2_CLIENT_SECRET', GOOGLE_OAUTH2_CLIENT_SECRET)
+    FACEBOOK_APP_ID = os.getenv('FACEBOOK_APP_ID', FACEBOOK_APP_ID)
+    FACEBOOK_APP_SECRET = os.getenv('FACEBOOK_APP_SECRET', FACEBOOK_APP_SECRET)
+except Exception:
+    # dotenv not installed or failed; assume env vars are set externally
+    pass
+
+# Optionally import production settings when deploying (set DJANGO_PRODUCTION=1)
+if os.getenv('DJANGO_PRODUCTION', '').lower() in ('1', 'true', 'yes'):
+    try:
+        from .production_settings import *  # noqa: F401,F403
+    except Exception:
+        # If production settings fail to import, continue with base settings
+        pass

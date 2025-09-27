@@ -6,6 +6,7 @@ This API provides comprehensive authentication services for KissanMart platform 
 - **Smart Buyers** including Mandi Owners, Shopkeepers, and Communities
 - **Phone + OTP Registration**: The only registration method - phone verification first, then profile completion
 - **Optional Social Account Linking**: Google/Facebook accounts can be optionally linked during profile completion for future login convenience
+ - **Optional Social Account Linking**: Google/Facebook accounts can be linked after profile completion via dedicated endpoints for better security and separation of concerns
 
 ## Base URL
 ```
@@ -68,7 +69,7 @@ Verify OTP and create basic user account (phone verification required first).
 **POST** `/complete-profile/`
 *No Authentication Required - Uses mobile number verification*
 
-Complete user profile with required details after phone verification. **Optionally link Google/Facebook account for future social login.**
+Complete user profile with required details after phone verification.
 
 **Request Body:**
 ```json
@@ -83,21 +84,17 @@ Complete user profile with required details after phone verification. **Optional
     "state": "Rajasthan", 
     "pincode": "302001",
     "latitude": 26.9124,
-    "longitude": 75.7873,
-    "google_access_token": "optional_google_token",
-    "facebook_access_token": "optional_facebook_token"
+    "longitude": 75.7873
 }
 ```
 
-**Optional Social Linking Fields:**
-- `google_access_token` (string, optional): Google OAuth access token to link Google account
-- `facebook_access_token` (string, optional): Facebook OAuth access token to link Facebook account
+**Note:** Social account linking is no longer part of profile completion. Use the dedicated linking endpoints after completing the profile.
 
 **Success Response:**
 ```json
 {
     "success": true,
-    "message": "Profile completed successfully! You can now login. Google account linked successfully.",
+    "message": "Profile completed successfully! You can now login.",
     "user": {
         "id": 1,
         "mobile_number": "9876543210",
@@ -118,10 +115,7 @@ Complete user profile with required details after phone verification. **Optional
     "token": "abc123token",
     "session_token": "session123",
     "profile_complete": true,
-    "social_accounts_linked": {
-        "google": true,
-        "facebook": false
-    }
+    
 }
 ```
 
@@ -253,8 +247,7 @@ Get current user profile.
 1. **Send OTP** → `/send-otp/` with phone number
 2. **Verify Phone** → `/verify-phone-registration/` with OTP 
 3. **Complete Profile** → `/complete-profile/` with all required details
-   - **Optional**: Include `google_access_token` or `facebook_access_token` to link social accounts
-   - This enables future login convenience (though currently only phone+OTP login is supported)
+    - This enables future login convenience (though currently only phone+OTP login is supported)
 4. User can now login using phone+OTP
 
 ### For Existing Users (Login):
@@ -263,10 +256,7 @@ Get current user profile.
 2. **Login** → `/login/phone/` with OTP
 
 ### Social Account Linking
-- **During Profile Completion**: Users can optionally link Google/Facebook accounts while completing their profile
-- **Benefits**: Provides login convenience and account recovery options
-- **Security**: Each social account can only be linked to one KissanMart account
-- **Note**: Currently, login is only supported via phone+OTP, but social linking provides future extensibility
+- Social account linking is handled via dedicated endpoints after profile completion. Each social account can only be linked to one KissanMart account.
 
 ## Required Fields
 

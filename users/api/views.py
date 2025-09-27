@@ -28,6 +28,8 @@ import base64
 import hashlib
 import urllib.parse
 
+from django.views.decorators.csrf import csrf_exempt
+
 from ..models import CustomUser, OTP, UserSession
 from .serializers_new import (
     PhoneRegistrationSerializer,
@@ -181,50 +183,7 @@ class CompleteProfileView(APIView):
         serializer = ProfileCompletionSerializer(user, data=request.data)
         
         if serializer.is_valid():
-            # Check for social account linking
-            google_data = serializer.validated_data.pop('google_user_data', None)
-            facebook_data = serializer.validated_data.pop('facebook_user_data', None)
-            
-            # Link social accounts if data was provided
-            if google_data:
-                # Check if Google account is already linked to another user
-                existing_google_user = CustomUser.objects.filter(google_id=google_data['id']).exclude(id=user.id).first()
-                if existing_google_user:
-                    return Response({
-                        'success': False,
-                        'message': 'This Google account is already linked to another user'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-                
-                user.google_id = google_data['id']
-                # Update email if not set and Google email is available
-                if not user.email and google_data.get('email'):
-                    # Check if email is already taken by another user
-                    if not CustomUser.objects.filter(email=google_data['email']).exclude(id=user.id).exists():
-                        user.email = google_data['email']
-                # Pre-fill name if not set
-                if not user.full_name and google_data.get('name'):
-                    user.full_name = google_data['name']
-                user.save()
-            
-            if facebook_data:
-                # Check if Facebook account is already linked to another user
-                existing_facebook_user = CustomUser.objects.filter(facebook_id=facebook_data['id']).exclude(id=user.id).first()
-                if existing_facebook_user:
-                    return Response({
-                        'success': False,
-                        'message': 'This Facebook account is already linked to another user'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-                
-                user.facebook_id = facebook_data['id']
-                # Update email if not set and Facebook email is available
-                if not user.email and facebook_data.get('email'):
-                    # Check if email is already taken by another user
-                    if not CustomUser.objects.filter(email=facebook_data['email']).exclude(id=user.id).exists():
-                        user.email = facebook_data['email']
-                # Pre-fill name if not set
-                if not user.full_name and facebook_data.get('name'):
-                    user.full_name = facebook_data['name']
-                user.save()
+            # No social linking during profile completion; linking happens via dedicated endpoint
             
             # Save the user profile
             serializer.save()
@@ -234,25 +193,13 @@ class CompleteProfileView(APIView):
             user_session = UserSession.objects.create(user=user)
             
             response_message = 'Profile completed successfully! You can now login.'
-            if google_data or facebook_data:
-                linked_accounts = []
-                if google_data:
-                    linked_accounts.append('Google')
-                if facebook_data:
-                    linked_accounts.append('Facebook')
-                response_message += f' {", ".join(linked_accounts)} account(s) linked successfully.'
-            
             return Response({
                 'success': True,
                 'message': response_message,
                 'user': UserProfileSerializer(user).data,
                 'token': token.key,
                 'session_token': user_session.session_token,
-                'profile_complete': user.is_profile_complete,
-                'social_accounts_linked': {
-                    'google': bool(user.google_id),
-                    'facebook': bool(user.facebook_id)
-                }
+                'profile_complete': user.is_profile_complete
             }, status=status.HTTP_200_OK)
         
         return Response({
@@ -409,6 +356,293 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
             'success': False,
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class OAuthCallbackView(APIView):
+    """Handle OAuth authorization code from frontend: exchange code for access token, get user info, create/return user and tokens"""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        provider = request.data.get('provider')
+        code = request.data.get('code')
+        redirect_uri = request.data.get('redirect_uri')
+
+        if not provider or not code or not redirect_uri:
+            return Response({'success': False, 'message': 'provider, code and redirect_uri are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            if provider == 'google':
+                token_data = self.exchange_google_code(code, redirect_uri)
+                access_token = token_data.get('access_token')
+                # fetch user info
+                user_info = requests.get(
+                    f'https://www.googleapis.com/oauth2/v1/userinfo?alt=json&access_token={access_token}'
+                ).json()
+                social_id = user_info.get('id')
+                email = user_info.get('email')
+                name = user_info.get('name') or f"{user_info.get('given_name','')} {user_info.get('family_name','')}".strip()
+                provider_field = 'google'
+            elif provider == 'facebook':
+                token_data = self.exchange_facebook_code(code, redirect_uri)
+                access_token = token_data.get('access_token')
+                user_info = requests.get(
+                    f'https://graph.facebook.com/me?access_token={access_token}&fields=id,name,email,first_name,last_name,picture'
+                ).json()
+                social_id = user_info.get('id')
+                email = user_info.get('email')
+                name = user_info.get('name')
+                provider_field = 'facebook'
+            else:
+                return Response({'success': False, 'message': 'Unsupported provider'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Find or create user
+            # If the request is made by an authenticated user, treat this as a linking operation
+            request_user = None
+            try:
+                if request.user and request.user.is_authenticated:
+                    request_user = request.user
+            except Exception:
+                request_user = None
+
+            if request_user:
+                # Ensure the social id is not already linked to another account
+                if provider_field == 'google':
+                    existing = CustomUser.objects.filter(google_id=social_id).exclude(id=request_user.id).first()
+                    if existing:
+                        return Response({'success': False, 'message': 'This Google account is already linked to another user'}, status=status.HTTP_400_BAD_REQUEST)
+                    request_user.google_id = social_id
+                    request_user.registration_method = 'google'
+                    # Optionally update email/name if empty
+                    if not request_user.email and email:
+                        if not CustomUser.objects.filter(email=email).exclude(id=request_user.id).exists():
+                            request_user.email = email
+                    if not request_user.full_name and name:
+                        request_user.full_name = name
+                    request_user.save()
+                else:
+                    existing = CustomUser.objects.filter(facebook_id=social_id).exclude(id=request_user.id).first()
+                    if existing:
+                        return Response({'success': False, 'message': 'This Facebook account is already linked to another user'}, status=status.HTTP_400_BAD_REQUEST)
+                    request_user.facebook_id = social_id
+                    request_user.registration_method = 'facebook'
+                    if not request_user.email and email:
+                        if not CustomUser.objects.filter(email=email).exclude(id=request_user.id).exists():
+                            request_user.email = email
+                    if not request_user.full_name and name:
+                        request_user.full_name = name
+                    request_user.save()
+
+                # Return success for linking operation
+                return Response({
+                    'success': True,
+                    'message': 'Social account linked successfully',
+                    'linked': True,
+                    'provider': provider,
+                    'user': UserProfileSerializer(request_user).data
+                }, status=status.HTTP_200_OK)
+
+            # Otherwise, find or create user (existing login/registration flow)
+            user = None
+            if provider == 'google':
+                user = CustomUser.objects.filter(google_id=social_id).first()
+            else:
+                user = CustomUser.objects.filter(facebook_id=social_id).first()
+
+            if not user and email:
+                # Try to find user by email
+                user = CustomUser.objects.filter(email=email).first()
+
+            if user:
+                # Link social id if not linked
+                if provider_field == 'google' and not user.google_id:
+                    user.google_id = social_id
+                    user.registration_method = 'google'
+                    user.save()
+                if provider_field == 'facebook' and not user.facebook_id:
+                    user.facebook_id = social_id
+                    user.registration_method = 'facebook'
+                    user.save()
+            else:
+                # Create a new user
+                username = None
+                user = CustomUser(
+                    full_name=name or '',
+                    email=email or None,
+                    registration_method=provider_field,
+                )
+                if provider_field == 'google':
+                    user.google_id = social_id
+                else:
+                    user.facebook_id = social_id
+
+                # set unusable password
+                user.set_unusable_password()
+                user.save()
+
+            # If profile is complete, issue token and session (login)
+            if user.is_profile_complete:
+                token, _ = Token.objects.get_or_create(user=user)
+                UserSession.objects.filter(user=user, is_active=True).update(is_active=False)
+                user_session = UserSession.objects.create(user=user)
+
+                return Response({
+                    'success': True,
+                    'message': 'OAuth login successful',
+                    'user': UserProfileSerializer(user).data,
+                    'token': token.key,
+                    'session_token': user_session.session_token
+                }, status=status.HTTP_200_OK)
+
+            # If profile is incomplete, return next_step and provider access token so frontend can complete profile
+            return Response({
+                'success': True,
+                'message': 'Profile incomplete',
+                'user': UserProfileSerializer(user).data,
+                'next_step': 'complete_profile',
+                'provider': provider,
+                'provider_access_token': access_token
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.exception('OAuth callback error')
+            # If the exception carries provider response details, include them in the response for debugging
+            message = str(e)
+            return Response({'success': False, 'message': message}, status=status.HTTP_400_BAD_REQUEST)
+
+    def exchange_google_code(self, code, redirect_uri):
+        data = {
+            'code': code,
+            'client_id': getattr(settings, 'GOOGLE_OAUTH2_CLIENT_ID', ''),
+            'client_secret': getattr(settings, 'GOOGLE_OAUTH2_CLIENT_SECRET', ''),
+            'redirect_uri': redirect_uri,
+            'grant_type': 'authorization_code'
+        }
+        headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+        resp = requests.post('https://oauth2.googleapis.com/token', data=data, headers=headers)
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as e:
+            # Attach response body for easier debugging
+            body = resp.text
+            logger.error('Google token exchange failed: %s', body)
+            raise requests.HTTPError(f'{e} - response body: {body}')
+        return resp.json()
+
+    def exchange_facebook_code(self, code, redirect_uri):
+        params = {
+            'client_id': getattr(settings, 'FACEBOOK_APP_ID', ''),
+            'client_secret': getattr(settings, 'FACEBOOK_APP_SECRET', ''),
+            'redirect_uri': redirect_uri,
+            'code': code
+        }
+        resp = requests.get('https://graph.facebook.com/v18.0/oauth/access_token', params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+
+class OAuthTokenView(APIView):
+    """Exchange authorization code for provider access token (used if frontend prefers server-side exchange)"""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        provider = request.data.get('provider')
+        code = request.data.get('code')
+        redirect_uri = request.data.get('redirect_uri')
+
+        if not provider or not code or not redirect_uri:
+            return Response({'success': False, 'message': 'provider, code and redirect_uri are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            if provider == 'google':
+                data = {
+                    'code': code,
+                    'client_id': getattr(settings, 'GOOGLE_OAUTH2_CLIENT_ID', ''),
+                    'client_secret': getattr(settings, 'GOOGLE_OAUTH2_CLIENT_SECRET', ''),
+                    'redirect_uri': redirect_uri,
+                    'grant_type': 'authorization_code'
+                }
+                resp = requests.post('https://oauth2.googleapis.com/token', data=data)
+                resp.raise_for_status()
+                return Response(resp.json(), status=status.HTTP_200_OK)
+
+            elif provider == 'facebook':
+                params = {
+                    'client_id': getattr(settings, 'FACEBOOK_APP_ID', ''),
+                    'client_secret': getattr(settings, 'FACEBOOK_APP_SECRET', ''),
+                    'redirect_uri': redirect_uri,
+                    'code': code
+                }
+                resp = requests.get('https://graph.facebook.com/v18.0/oauth/access_token', params=params)
+                resp.raise_for_status()
+                return Response(resp.json(), status=status.HTTP_200_OK)
+
+            else:
+                return Response({'success': False, 'message': 'Unsupported provider'}, status=status.HTTP_400_BAD_REQUEST)
+
+        except requests.HTTPError as e:
+            logger.exception('Token exchange failed')
+            return Response({'success': False, 'message': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class LinkSocialView(APIView):
+    """Link a social account (google/facebook) to the authenticated user using provider access token"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        provider = request.data.get('provider')
+        access_token = request.data.get('access_token')
+
+        if not provider or not access_token:
+            return Response({'success': False, 'message': 'provider and access_token are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            if provider == 'google':
+                # fetch userinfo
+                user_info = requests.get(f'https://www.googleapis.com/oauth2/v1/userinfo?alt=json&access_token={access_token}').json()
+                social_id = user_info.get('id')
+                email = user_info.get('email')
+                name = user_info.get('name')
+
+                # check if already linked to another user
+                existing = CustomUser.objects.filter(google_id=social_id).exclude(id=request.user.id).first()
+                if existing:
+                    return Response({'success': False, 'message': 'This Google account is already linked to another user'}, status=status.HTTP_400_BAD_REQUEST)
+
+                request.user.google_id = social_id
+                if not request.user.email and email:
+                    if not CustomUser.objects.filter(email=email).exclude(id=request.user.id).exists():
+                        request.user.email = email
+                if not request.user.full_name and name:
+                    request.user.full_name = name
+                request.user.save()
+
+            elif provider == 'facebook':
+                user_info = requests.get(f'https://graph.facebook.com/me?access_token={access_token}&fields=id,name,email').json()
+                social_id = user_info.get('id')
+                email = user_info.get('email')
+                name = user_info.get('name')
+
+                existing = CustomUser.objects.filter(facebook_id=social_id).exclude(id=request.user.id).first()
+                if existing:
+                    return Response({'success': False, 'message': 'This Facebook account is already linked to another user'}, status=status.HTTP_400_BAD_REQUEST)
+
+                request.user.facebook_id = social_id
+                if not request.user.email and email:
+                    if not CustomUser.objects.filter(email=email).exclude(id=request.user.id).exists():
+                        request.user.email = email
+                if not request.user.full_name and name:
+                    request.user.full_name = name
+                request.user.save()
+
+            else:
+                return Response({'success': False, 'message': 'Unsupported provider'}, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response({'success': True, 'message': 'Social account linked', 'user': UserProfileSerializer(request.user).data}, status=status.HTTP_200_OK)
+
+        except requests.HTTPError as e:
+            logger.exception('Link social failed')
+            return Response({'success': False, 'message': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 @api_view(['GET'])
