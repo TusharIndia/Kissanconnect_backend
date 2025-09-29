@@ -164,3 +164,27 @@ staticfiles/
 
 # Media files
 media/
+
+# Backups and sensitive artifacts (local backups created during maintenance)
+db.sqlite3.bak
+media-backup.zip
+*.bak
+*.backup
+*.zip
+
+# Secret / credential files
+*.key
+*.pem
+*.crt
+*.credentials
+secrets.*
+
+# Env files (already present above but ensure all variants are ignored)
+.env
+.env.*
+.env.local
+.env.production
+.env.dev
+
+# Vercel or deployment configs that may contain secrets
+vercel.json
