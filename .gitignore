@@ -188,3 +188,11 @@ secrets.*
 
 # Vercel or deployment configs that may contain secrets
 vercel.json
+
+# Documentation (keep local copies but do not push docs to remote)
+# NOTE: If you want certain README files to remain in repo, remove from this list.
+API_DOCUMENTATION.md
+ADMIN_API_DOCUMENTATION.md
+PRODUCTS_API_DOCUMENTATION.md
+README_VERCEL.md
+*.md
