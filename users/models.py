@@ -173,3 +173,25 @@ class UserSession(models.Model):
     
     def __str__(self):
         return f"Session for {self.user.mobile_number}"
+
+
+class AdminActionLog(models.Model):
+    """Record admin actions taken on user accounts for auditing."""
+    ACTION_CHOICES = [
+        ('view', 'View'),
+        ('suspend', 'Suspend'),
+        ('delete', 'Delete'),
+        ('other', 'Other'),
+    ]
+
+    admin_username = models.CharField(max_length=150, null=True, blank=True)
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='admin_logs')
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES)
+    details = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.action} by {self.admin_username} on {self.user.get_identifier()} at {self.created_at}"

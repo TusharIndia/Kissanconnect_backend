@@ -40,6 +40,25 @@ Send OTP to mobile number for new user registration.
 }
 ```
 
+Note: This endpoint integrates with MSG91 Flow API in production/development. The server will send a JSON POST to the configured MSG91 URL with headers:
+
+- authkey: <AUTH_KEY from environment>
+- Content-Type: application/json
+
+Example MSG91 payload (server sends):
+```json
+{
+    "flow_id": "<FLOW_ID from env>",
+    "sender": "<SENDER_ID from env>",
+    "mobiles": "91<10_digit_number>",
+    "var1": "<6_digit_otp>"
+}
+```
+
+OTP lifecycle:
+- OTP is generated server-side, saved to the database along with the mobile number and expiry timestamp.
+- After a successful verification (or login using OTP), the OTP record is deleted from the database to prevent reuse.
+
 ### Step 2: Verify Phone and Create Account
 **POST** `/verify-phone-registration/`
 
@@ -166,6 +185,17 @@ Login using phone number and OTP.
 }
 ```
 
+**Error Response (Profile not completed):**
+If the mobile number is registered but the user's profile hasn't been completed yet, the login attempt (even with a correct OTP) will be rejected and the API will direct the client to complete the profile. The OTP will not be consumed in this case.
+
+```json
+{
+    "success": false,
+    "message": "Profile not completed. Please complete your profile to sign in.",
+    "next_step": "complete_profile"
+}
+```
+
 ## Utility Endpoints
 
 ### Check User Existence
@@ -258,6 +288,10 @@ Get current user profile.
 ### Social Account Linking
 - Social account linking is handled via dedicated endpoints after profile completion. Each social account can only be linked to one KissanMart account.
 
+Note about incomplete profiles and login flows:
+- OAuth login (Google/Facebook): if social authentication succeeds but the linked KissanMart user has an incomplete profile, the API will return a response indicating the profile is incomplete with `next_step: "complete_profile"` and (for OAuth flows) a `provider_access_token` so the frontend can complete the profile using social data.
+- Phone + OTP login: if the phone is verified via OTP but the user's profile is incomplete, the API returns a specific error directing the client to complete the profile (`next_step: "complete_profile"`). The OTP is not consumed in this case.
+
 ## Required Fields
 
 ### For Smart Sellers:
@@ -290,6 +324,8 @@ Get current user profile.
     }
 }
 ```
+
+
 
 ### Specific Error Cases:
 - Invalid phone number format
@@ -394,9 +430,9 @@ For Smart Buyers, include buyer_category:
 ---
 
 ### 4. User Login
-**POST** `/login/`
+**POST** `/login/phone/`
 
-Login user with OTP verification.
+Login user with phone + OTP verification. (Same `/login/phone/` endpoint described in the "Phone + OTP Login" section above.)
 
 **Request Body:**
 ```json

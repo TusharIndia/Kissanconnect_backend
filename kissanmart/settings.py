@@ -161,9 +161,11 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://kissanmart-frontend.vercel.app",
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
+# Note: Added https://kissanmart-frontend.vercel.app to CORS_ALLOWED_ORIGINS
 
 # Additional CORS settings for better frontend integration
 CORS_ALLOW_CREDENTIALS = True
@@ -177,6 +179,7 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-requested-with',
+    'x-admin-token',
 ]
 
 # Custom User Model
@@ -194,10 +197,11 @@ AUTHENTICATION_BACKENDS = [
     'allauth.account.auth_backends.AuthenticationBackend',
 ]
 
-# Allauth settings
-ACCOUNT_AUTHENTICATION_METHOD = 'email'
-ACCOUNT_EMAIL_REQUIRED = True
-ACCOUNT_USERNAME_REQUIRED = False
+# Allauth settings (modernized)
+# Use ACCOUNT_LOGIN_METHODS to specify how users login
+ACCOUNT_LOGIN_METHODS = {'email'}
+# Use ACCOUNT_SIGNUP_FIELDS to control required signup fields on forms
+ACCOUNT_SIGNUP_FIELDS = ['email*']
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_EMAIL_VERIFICATION = 'none'  # We'll handle verification ourselves
 ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = False
@@ -263,6 +267,17 @@ try:
     GOOGLE_OAUTH2_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH2_CLIENT_SECRET', GOOGLE_OAUTH2_CLIENT_SECRET)
     FACEBOOK_APP_ID = os.getenv('FACEBOOK_APP_ID', FACEBOOK_APP_ID)
     FACEBOOK_APP_SECRET = os.getenv('FACEBOOK_APP_SECRET', FACEBOOK_APP_SECRET)
+    # Admin credentials for simple admin APIs
+    # These must be provided through environment variables in production.
+    # For development, you can add them to <project>/kissanmart/.env.local
+    ADMIN_USERNAME = os.getenv('ADMIN_USERNAME')
+    ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD')
+    # MSG91 / OTP provider configuration (read from environment/.env.local)
+    OTP_PROVIDER = os.getenv('OTP_PROVIDER', 'msg91')
+    OTP_URL = os.getenv('OTP_URL', os.getenv('MSG91_OTP_URL', 'https://control.msg91.com/api/v5/flow/'))
+    OTP_FLOW_ID = os.getenv('FLOW_ID', os.getenv('OTP_FLOW_ID', os.getenv('MSG91_FLOW_ID', '')))
+    OTP_SENDER_ID = os.getenv('SENDER_ID', os.getenv('OTP_SENDER_ID', os.getenv('MSG91_SENDER_ID', '')))
+    OTP_AUTH_KEY = os.getenv('AUTH_KEY', os.getenv('OTP_AUTH_KEY', os.getenv('MSG91_AUTH_KEY', '')))
 except Exception:
     # dotenv not installed or failed; assume env vars are set externally
     pass

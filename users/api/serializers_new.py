@@ -234,6 +234,11 @@ class PhoneLoginSerializer(serializers.Serializer):
                 raise serializers.ValidationError({
                     'profile': 'Please complete your profile first'
                 })
+            # Prevent login for suspended / deactivated users
+            if not user.is_active:
+                raise serializers.ValidationError({
+                    'account': 'This account has been suspended'
+                })
             attrs['user'] = user
         except CustomUser.DoesNotExist:
             raise serializers.ValidationError({

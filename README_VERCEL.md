@@ -39,3 +39,5 @@ python manage.py migrate
 python manage.py runserver
 ```
 
+Note: The backend now allows CORS from https://kissanmart-frontend.vercel.app (see `kissanmart/settings.py`).
+

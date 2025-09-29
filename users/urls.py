@@ -15,6 +15,7 @@ from .api.views import (
     user_dashboard, user_statistics
     , OAuthCallbackView, OAuthTokenView
     , LinkSocialView
+    
 )
 
 app_name = 'users'
@@ -43,4 +44,17 @@ urlpatterns = [
     path('auth/oauth/callback/', csrf_exempt(OAuthCallbackView.as_view()), name='oauth_callback'),
     path('auth/oauth/token/', csrf_exempt(OAuthTokenView.as_view()), name='oauth_token'),
     path('auth/oauth/link/', (LinkSocialView.as_view()), name='oauth_link'),
+    # Admin APIs (simple env-based auth)
+    # Imported below to avoid circular-import issues during app initialization
 ]
+
+from .api import admin_views
+
+urlpatterns += [
+    path('admin/auth/', csrf_exempt(admin_views.AdminAuthView.as_view()), name='admin_auth'),
+    path('admin/users/', admin_views.AdminUserListCreate.as_view(), name='admin_users_list_create'),
+    path('admin/users/<int:id>/', admin_views.AdminUserRetrieveUpdateDelete.as_view(), name='admin_user_rud'),
+    path('admin/users/<int:id>/suspend/', csrf_exempt(admin_views.AdminUserSuspendView.as_view()), name='admin_user_suspend'),
+    path('admin/users/<int:id>/logs/', admin_views.AdminUserLogsView.as_view(), name='admin_user_logs'),
+]
+

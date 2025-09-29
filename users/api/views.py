@@ -76,9 +76,45 @@ class SendOTPView(APIView):
     
     def send_sms(self, mobile_number, otp_code):
         try:
-            logger.info(f"OTP for {mobile_number}: {otp_code}")
-            print(f"📱 OTP for {mobile_number}: {otp_code}")
-            return True
+            # Use MSG91 flow API to send OTP. Settings pulled from Django settings.
+            from django.conf import settings
+
+            otp_url = getattr(settings, 'OTP_URL', 'https://control.msg91.com/api/v5/flow/')
+            flow_id = getattr(settings, 'OTP_FLOW_ID', None)
+            sender = getattr(settings, 'OTP_SENDER_ID', None)
+            auth_key = getattr(settings, 'OTP_AUTH_KEY', None)
+
+            # Ensure number is in expected format (without +), msg91 expects country code prefixed
+            cleaned = mobile_number
+            if cleaned.startswith('+'):
+                cleaned = cleaned[1:]
+            # If number is 10 digits, prefix with 91
+            if len(cleaned) == 10:
+                cleaned = '91' + cleaned
+
+            headers = {
+                'authkey': auth_key or '',
+                'Content-Type': 'application/json'
+            }
+
+            payload = {
+                'flow_id': flow_id,
+                'sender': sender,
+                'mobiles': cleaned,
+                'var1': otp_code
+            }
+
+            # Log payload (avoid logging sensitive keys in production)
+            logger.info(f"Sending OTP via MSG91 to {cleaned}")
+
+            resp = requests.post(otp_url, headers=headers, json=payload, timeout=10)
+
+            if resp.status_code in (200, 201):
+                logger.info(f"MSG91 response: {resp.status_code} - {resp.text}")
+                return True
+            else:
+                logger.error(f"MSG91 failed: {resp.status_code} - {resp.text}")
+                return False
         except Exception as e:
             logger.error(f"SMS sending failed: {str(e)}")
             return False
@@ -105,6 +141,11 @@ class VerifyPhoneRegistrationView(APIView):
             # Mark OTP as verified
             otp_instance.is_verified = True
             otp_instance.save()
+            # Remove the OTP record after successful verification to prevent reuse
+            try:
+                otp_instance.delete()
+            except Exception:
+                logger.exception('Failed to delete OTP instance after verification')
             
             # Create incomplete user account
             user = CustomUser.objects.create(
@@ -189,6 +230,10 @@ class CompleteProfileView(APIView):
             serializer.save()
             
             # Generate token for the user after profile completion
+            # Prevent issuing tokens if account is suspended
+            if not user.is_active:
+                return Response({'success': False, 'message': 'Account suspended'}, status=status.HTTP_403_FORBIDDEN)
+
             token, created = Token.objects.get_or_create(user=user)
             user_session = UserSession.objects.create(user=user)
             
@@ -215,36 +260,55 @@ class PhoneLoginView(APIView):
     
     def post(self, request):
         serializer = PhoneLoginSerializer(data=request.data)
-        
-        if serializer.is_valid():
-            user = serializer.validated_data['user']
-            otp_instance = serializer.validated_data['otp_instance']
-            
-            # Mark OTP as verified
-            otp_instance.is_verified = True
-            otp_instance.save()
-            
-            # Update user login time
-            user.last_login = timezone.now()
-            user.save()
-            
-            # Create new session
-            token, created = Token.objects.get_or_create(user=user)
-            UserSession.objects.filter(user=user, is_active=True).update(is_active=False)
-            user_session = UserSession.objects.create(user=user)
-            
+        # Validate input and inspect errors to provide a clearer message when
+        # the user's profile is incomplete. We must not consume or mark the
+        # OTP as used in that case.
+        if not serializer.is_valid():
+            errors = serializer.errors
+            # If validation failed because profile is incomplete, return a
+            # specific message so frontend can redirect to signup/profile
+            # completion flow.
+            if 'profile' in errors or errors.get('profile'):
+                return Response({
+                    'success': False,
+                    'message': 'Profile not completed. Please complete your profile to sign in.',
+                    'next_step': 'complete_profile'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
             return Response({
-                'success': True,
-                'message': 'Login successful',
-                'user': UserProfileSerializer(user).data,
-                'token': token.key,
-                'session_token': user_session.session_token
-            }, status=status.HTTP_200_OK)
-        
+                'success': False,
+                'errors': errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validated: proceed with login flow
+        user = serializer.validated_data['user']
+        otp_instance = serializer.validated_data['otp_instance']
+
+        # Mark OTP as verified
+        otp_instance.is_verified = True
+        otp_instance.save()
+        # Delete OTP instance after successful login/verification
+        try:
+            otp_instance.delete()
+        except Exception:
+            logger.exception('Failed to delete OTP instance after login')
+
+        # Update user login time
+        user.last_login = timezone.now()
+        user.save()
+
+        # Create new session
+        token, created = Token.objects.get_or_create(user=user)
+        UserSession.objects.filter(user=user, is_active=True).update(is_active=False)
+        user_session = UserSession.objects.create(user=user)
+
         return Response({
-            'success': False,
-            'errors': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
+            'success': True,
+            'message': 'Login successful',
+            'user': UserProfileSerializer(user).data,
+            'token': token.key,
+            'session_token': user_session.session_token
+        }, status=status.HTTP_200_OK)
 
 
 # UTILITY VIEWS
@@ -356,6 +420,45 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
             'success': False,
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CurrentUserView(APIView):
+    """Return the currently authenticated user's profile.
+
+    Supports DRF Token authentication (Authorization: Token <key>)
+    or session token via header X-Session-Token: <token> or query param ?session_token=<token>
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        # First, try standard DRF authentication
+        user = None
+        try:
+            user = request.user if request.user and request.user.is_authenticated else None
+        except Exception:
+            user = None
+
+        # If not authenticated by DRF token, try session token
+        if not user:
+            session_token = request.headers.get('X-Session-Token') or request.query_params.get('session_token')
+            if session_token:
+                try:
+                    session = UserSession.objects.filter(session_token=session_token, is_active=True).select_related('user').first()
+                    if session and not session.is_expired():
+                        user = session.user
+                except Exception:
+                    user = None
+
+        if not user:
+            return Response({'success': False, 'message': 'Authentication credentials were not provided or are invalid'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Prevent suspended users from getting profile
+        if not user.is_active:
+            return Response({'success': False, 'message': 'Account suspended'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = UserProfileSerializer(user)
+        return Response({'success': True, 'user': serializer.data})
+ 
 
 
 class OAuthCallbackView(APIView):
@@ -481,6 +584,10 @@ class OAuthCallbackView(APIView):
 
             # If profile is complete, issue token and session (login)
             if user.is_profile_complete:
+                # Ensure suspended users cannot receive tokens
+                if not user.is_active:
+                    return Response({'success': False, 'message': 'Account suspended'}, status=status.HTTP_403_FORBIDDEN)
+
                 token, _ = Token.objects.get_or_create(user=user)
                 UserSession.objects.filter(user=user, is_active=True).update(is_active=False)
                 user_session = UserSession.objects.create(user=user)
