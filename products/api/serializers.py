@@ -103,7 +103,7 @@ class ProductListSerializer(serializers.ModelSerializer):
         ]
 
     def get_location(self, obj):
-        if obj.latitude is None or obj.longitude is None:
+        if obj.latitude is None or obj.longitude is None or obj.latitude == 0.0 or obj.longitude == 0.0:
             return None
         return {
             'latitude': obj.latitude,
@@ -114,8 +114,8 @@ class ProductListSerializer(serializers.ModelSerializer):
 
 
 class ProductCreateSerializer(serializers.ModelSerializer):
-    # location is optional at model level; require lat/lon only if provided
-    location = serializers.DictField(write_only=True, required=False)
+    # location is required for product creation
+    location = serializers.DictField(write_only=True, required=True)
     # Validate buyer categories against the allowed set in validate()
     buyerCategoryVisibility = serializers.ListField(child=serializers.CharField(), required=False)
     # Accept JSON objects for images (e.g. {"url": "https://..."}).
@@ -147,9 +147,8 @@ class ProductCreateSerializer(serializers.ModelSerializer):
     def validate(self, data):
         # Validate required fields per frontend doc
         location = data.get('location')
-        if location is not None and location:
-            if 'latitude' not in location or 'longitude' not in location:
-                raise serializers.ValidationError({'location': 'location.latitude and location.longitude are required'})
+        if 'latitude' not in location or 'longitude' not in location or 'address' not in location:
+            raise serializers.ValidationError({'location': 'location.address, location.latitude and location.longitude are required'})
 
         price_type = data.get('price_type') or data.get('priceType') or 'fixed'
         market_source = data.get('market_price_source') or data.get('marketPriceSource')
@@ -234,15 +233,11 @@ class ProductCreateSerializer(serializers.ModelSerializer):
 
         product = Product.objects.create(**validated_data)
 
-        # attach location - use seller's location if not provided
-        if not location.get('latitude') or not location.get('longitude'):
-            if seller and hasattr(seller, 'latitude') and hasattr(seller, 'longitude'):
-                location['latitude'] = seller.latitude
-                location['longitude'] = seller.longitude
+        # attach location - location is required, so always provided
         product.latitude = location.get('latitude')
         product.longitude = location.get('longitude')
-        product.address = location.get('address') or (seller.address if seller else '')
-        product.pincode = location.get('pincode') or (seller.pincode if seller else '')
+        product.address = location.get('address')
+        product.pincode = location.get('pincode')
         if buyer_visibility is not None:
             product.buyer_category_visibility = buyer_visibility
         product.save()
