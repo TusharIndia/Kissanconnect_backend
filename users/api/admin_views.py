@@ -12,6 +12,7 @@ from .admin_serializers import AdminActionLogSerializer
 from ..models import CustomUser
 from django.shortcuts import get_object_or_404
 import base64
+from drf_spectacular.utils import extend_schema
 
 
 def make_admin_token(username: str, password: str) -> str:
@@ -20,6 +21,7 @@ def make_admin_token(username: str, password: str) -> str:
     return base64.b64encode(raw).decode('utf-8')
 
 
+@extend_schema(responses={200: dict})
 class AdminAuthView(APIView):
     """Authenticate admin credentials against env vars and return a token.
 
@@ -95,6 +97,7 @@ class AdminUserListCreate(AdminPermissionMixin, generics.ListCreateAPIView):
         return Response({'success': False, 'message': 'Admin user creation not allowed via this endpoint'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
 
+@extend_schema(responses={200: dict})
 class AdminUserRetrieveUpdateDelete(AdminPermissionMixin, APIView):
     permission_classes = [AllowAny]
     """Retrieve, update or delete a user by ID. Protected by admin token header.
@@ -173,6 +176,7 @@ class AdminUserRetrieveUpdateDelete(AdminPermissionMixin, APIView):
         return Response({'success': True, 'logs': serializer.data})
 
 
+@extend_schema(responses={200: dict})
 class AdminUserSuspendView(AdminPermissionMixin, APIView):
     permission_classes = [AllowAny]
 
@@ -200,6 +204,7 @@ class AdminUserSuspendView(AdminPermissionMixin, APIView):
         return Response({'success': True, 'message': 'User suspended'})
 
 
+@extend_schema(responses={200: dict})
 class AdminUserLogsView(AdminPermissionMixin, APIView):
     permission_classes = [AllowAny]
 

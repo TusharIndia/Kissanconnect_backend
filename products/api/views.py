@@ -15,6 +15,7 @@ from django.db.utils import DatabaseError
 import os
 import requests
 from django.conf import settings
+from drf_spectacular.utils import extend_schema
 
 # Allowed buyer categories (must match serializer allowed set and users.BUYER_CATEGORY_CHOICES)
 # Note: values come from users.models.CustomUser.BUYER_CATEGORY_CHOICES: 'mandi_owner','shopkeeper','community'
@@ -36,6 +37,7 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     return int(R * c)
 
 
+@extend_schema(operation_id='seller-products-list', responses={200: ProductListSerializer(many=True)})
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_seller_products(request):
@@ -51,6 +53,7 @@ def get_seller_products(request):
     return Response({'items': serializer.data, 'totalCount': products.count()})
 
 
+@extend_schema(request=ProductCreateSerializer, responses={201: ProductListSerializer})
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def add_product(request):
@@ -72,6 +75,7 @@ def add_product(request):
     return Response({'error': {'code': 'VALIDATION_ERROR', 'message': 'Validation failed', 'details': serializer.errors}}, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(request=ProductUpdateSerializer, responses={200: ProductListSerializer})
 @api_view(['PATCH', 'PUT'])
 @permission_classes([IsAuthenticated])
 def update_product(request, uuid):
@@ -93,6 +97,7 @@ def update_product(request, uuid):
     return Response({'error': {'code': 'VALIDATION_ERROR', 'message': 'Validation failed', 'details': serializer.errors}}, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(responses={204: None})
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_product(request, uuid):
@@ -115,6 +120,7 @@ def delete_product(request, uuid):
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@extend_schema(responses={200: ProductListSerializer(many=True)})
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_products_by_buyer_type(request):
@@ -155,6 +161,7 @@ def get_products_by_buyer_type(request):
     })
 
 
+@extend_schema(operation_id='product-detail', responses={200: ProductListSerializer})
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_product_detail(request, uuid):
@@ -216,6 +223,7 @@ def get_product_detail(request, uuid):
     return Response(data)
 
 
+@extend_schema(operation_id='public-products-list', responses={200: ProductListSerializer(many=True)})
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def list_products(request):
@@ -328,6 +336,7 @@ def list_products(request):
     return Response({'items': serialized, 'totalCount': total, 'page': page, 'limit': limit})
 
 
+@extend_schema(responses={200: dict})
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_mandi_price(request, uuid):
@@ -504,6 +513,7 @@ def get_mandi_price(request, uuid):
     return Response(resp)
 
 
+@extend_schema(responses={200: dict})
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_product_distance(request, uuid):

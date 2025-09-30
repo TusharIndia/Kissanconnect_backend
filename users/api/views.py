@@ -40,11 +40,13 @@ from .serializers_new import (
     UserProfileSerializer,
     UserListSerializer
 )
+from drf_spectacular.utils import extend_schema
 
 logger = logging.getLogger(__name__)
 
 
 # REGISTRATION FLOW
+@extend_schema(request=OTPRequestSerializer, responses={200: dict})
 class SendOTPView(APIView):
     """Step 1: Send OTP for phone registration or login"""
     permission_classes = [AllowAny]
@@ -120,6 +122,7 @@ class SendOTPView(APIView):
             return False
 
 
+@extend_schema(request=OTPVerificationSerializer, responses={200: dict})
 class VerifyPhoneRegistrationView(APIView):
     """Step 2: Verify phone number and create basic user account"""
     permission_classes = [AllowAny]
@@ -178,6 +181,7 @@ class VerifyPhoneRegistrationView(APIView):
         }, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(request=ProfileCompletionSerializer, responses={200: dict})
 class CompleteProfileView(APIView):
     """Step 3: Complete user profile after phone verification"""
     permission_classes = [AllowAny]
@@ -254,6 +258,7 @@ class CompleteProfileView(APIView):
 
 
 # LOGIN FLOWS
+@extend_schema(request=PhoneLoginSerializer, responses={200: dict})
 class PhoneLoginView(APIView):
     """Login using phone number + OTP"""
     permission_classes = [AllowAny]
@@ -312,6 +317,7 @@ class PhoneLoginView(APIView):
 
 
 # UTILITY VIEWS
+@extend_schema(responses={200: dict})
 class CheckUserExistsView(APIView):
     permission_classes = [AllowAny]
     
@@ -368,6 +374,7 @@ class CheckUserExistsView(APIView):
         return Response(response_data, status=status.HTTP_200_OK)
 
 
+@extend_schema(responses={200: dict})
 class UserLogoutView(APIView):
     permission_classes = [IsAuthenticated]
     
@@ -388,6 +395,7 @@ class UserLogoutView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(responses={200: UserProfileSerializer})
 class UserProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = UserProfileSerializer
     permission_classes = [IsAuthenticated]
@@ -422,6 +430,7 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
         }, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(responses={200: UserProfileSerializer})
 class CurrentUserView(APIView):
     """Return the currently authenticated user's profile.
 
@@ -461,6 +470,7 @@ class CurrentUserView(APIView):
  
 
 
+@extend_schema(responses={200: dict})
 class OAuthCallbackView(APIView):
     """Handle OAuth authorization code from frontend: exchange code for access token, get user info, create/return user and tokens"""
     permission_classes = [AllowAny]
@@ -647,6 +657,7 @@ class OAuthCallbackView(APIView):
         return resp.json()
 
 
+@extend_schema(responses={200: dict})
 class OAuthTokenView(APIView):
     """Exchange authorization code for provider access token (used if frontend prefers server-side exchange)"""
     permission_classes = [AllowAny]
@@ -691,6 +702,7 @@ class OAuthTokenView(APIView):
             return Response({'success': False, 'message': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(responses={200: dict})
 class LinkSocialView(APIView):
     """Link a social account (google/facebook) to the authenticated user using provider access token"""
     permission_classes = [IsAuthenticated]
@@ -752,6 +764,7 @@ class LinkSocialView(APIView):
 
 
 
+@extend_schema(responses={200: dict})
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def user_dashboard(request):
@@ -771,6 +784,7 @@ def user_dashboard(request):
     })
 
 
+@extend_schema(responses={200: dict})
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def user_statistics(request):
