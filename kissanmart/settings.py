@@ -322,6 +322,9 @@ GOOGLE_OAUTH2_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH2_CLIENT_SECRET', '')
 FACEBOOK_APP_ID = os.getenv('FACEBOOK_APP_ID', 'your-facebook-app-id')
 FACEBOOK_APP_SECRET = os.getenv('FACEBOOK_APP_SECRET', '')
 
+# Mandi API Key
+MANDI_API_KEY = os.getenv('MANDI_API_KEY', '')
+
 # Load .env.local automatically in development if python-dotenv is installed
 try:
     from dotenv import load_dotenv

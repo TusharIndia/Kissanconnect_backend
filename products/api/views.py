@@ -23,6 +23,8 @@ ALLOWED_BUYER_CATEGORIES = {'mandi_owner', 'shopkeeper', 'community'}
 
 def haversine_distance(lat1, lon1, lat2, lon2):
     # Returns distance in meters
+    # Convert all inputs to float to handle DecimalField values
+    lat1, lon1, lat2, lon2 = float(lat1), float(lon1), float(lat2), float(lon2)
     R = 6371000  # Earth radius in meters
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
@@ -395,7 +397,7 @@ def get_mandi_price(request, uuid):
         if not api_key:
             raise RuntimeError('MANDI_API_KEY not configured')
         url = f'https://api.data.gov.in/resource/{resource_id}'
-        resp = requests.get(url, params=params, timeout=8)
+        resp = requests.get(url, params=params)
         if resp.status_code != 200:
             raise RuntimeError(f'data.gov.in returned status {resp.status_code}')
         j = resp.json()
