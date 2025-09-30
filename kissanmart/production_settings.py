@@ -9,7 +9,7 @@ DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('1', 'true', 'yes')
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', SECRET_KEY)
 
 # Allowed hosts should be provided via env, comma-separated
-ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', '').split(',') if os.getenv('DJANGO_ALLOWED_HOSTS') else ['localhost']
+ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', '').split(',') if os.getenv('DJANGO_ALLOWED_HOSTS') else ['kissanconnect-backend.onrender.com', 'localhost']
 
 # Enforce DATABASE_URL in production. We prefer dj-database-url for parsing
 DATABASE_URL = os.getenv('DATABASE_URL')
