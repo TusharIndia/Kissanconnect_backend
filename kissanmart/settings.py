@@ -12,10 +12,22 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import os
+from urllib.parse import urlparse
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+# Load .env.local early so values like DATABASE_URL are available to the
+# configuration below when running in development. This uses python-dotenv if
+# installed; if not present, we proceed and expect env vars to be set externally.
+try:
+    from dotenv import load_dotenv
+
+    DOTENV_PATH = BASE_DIR / 'kissanmart' / '.env.local'
+    load_dotenv(DOTENV_PATH)
+except Exception:
+    pass
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -88,12 +100,37 @@ WSGI_APPLICATION = 'kissanmart.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
+DATABASES = {}
+
+# Parse DATABASE_URL. dj-database-url is the preferred parser and is included
+# in requirements.txt. If it is not available, fall back to a minimal parser for
+# common postgres URLs. If parsing fails, DATABASES will remain empty.
+DATABASE_URL = os.getenv('DATABASE_URL')
+if DATABASE_URL:
+    try:
+        import dj_database_url
+
+        DATABASES['default'] = dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+    except Exception:
+        # Basic fallback parser for Postgres-style URLs (postgres://...)
+        try:
+            url = urlparse(DATABASE_URL)
+            if url.scheme in ('postgres', 'postgresql'):
+                DATABASES['default'] = {
+                    'ENGINE': 'django.db.backends.postgresql',
+                    'NAME': url.path.lstrip('/'),
+                    'USER': url.username,
+                    'PASSWORD': url.password,
+                    'HOST': url.hostname,
+                    'PORT': url.port or '',
+                }
+        except Exception:
+            # leave DATABASES empty on parse failure
+            pass
+
+# If no DATABASE_URL was provided, we intentionally keep DATABASES empty.
+# Some management commands or local development may expect a DB; developers can
+# create a local `.env.local` with DATABASE_URL set to a local Postgres URL.
 
 
 # Password validation
@@ -137,6 +174,32 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # Media files
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Optional remote storage (S3). If AWS_S3_BUCKET_NAME is set, use django-storages
+# to store media files on S3 instead of the local filesystem. Requires
+# `boto3` and `django-storages` in production.
+AWS_S3_BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME')
+if AWS_S3_BUCKET_NAME:
+    # Read common AWS env vars
+    AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+    AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+    AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION_NAME') or None
+    AWS_S3_CUSTOM_DOMAIN = os.getenv('AWS_S3_CUSTOM_DOMAIN') or f'{AWS_S3_BUCKET_NAME}.s3.amazonaws.com'
+    AWS_DEFAULT_ACL = os.getenv('AWS_DEFAULT_ACL', None)
+
+    # Use S3 for default file storage (media)
+    DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+
+    # Optionally serve static files from S3 when configured
+    if os.getenv('AWS_S3_STATIC_BUCKET_NAME'):
+        STATICFILES_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+        STATIC_URL = f'https://{os.getenv("AWS_S3_STATIC_CUSTOM_DOMAIN", AWS_S3_CUSTOM_DOMAIN)}/static/'
+    else:
+        # keep existing static settings; media will be on S3
+        STATIC_URL = os.getenv('STATIC_URL', STATIC_URL)
+
+    # Build MEDIA_URL to point to S3
+    MEDIA_URL = f'https://{os.getenv("AWS_S3_CUSTOM_DOMAIN", AWS_S3_CUSTOM_DOMAIN)}/media/'
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

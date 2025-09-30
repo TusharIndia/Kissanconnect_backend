@@ -18,14 +18,15 @@ class ProductImageInline(admin.TabularInline):
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = [
-        'name', 'variety', 'seller', 'price_per_unit', 'unit', 
-        'quantity_available', 'target_buyers_display', 'status', 'is_published', 'created_at'
+        # updated to match Product model field names
+        'title', 'variety', 'seller', 'price_per_unit', 'quantity_unit',
+        'available_quantity', 'target_buyers_display', 'status', 'is_published', 'created_at'
     ]
     list_filter = [
-        'is_published', 'unit', 'target_mandi_owners', 'target_shopkeepers', 
-        'target_communities', 'created_at'
+        # only filter on actual model fields
+        'is_published', 'quantity_unit', 'created_at'
     ]
-    search_fields = ['name', 'variety', 'seller__full_name', 'seller__mobile_number', 'description']
+    search_fields = ['title', 'variety', 'seller__full_name', 'seller__mobile_number', 'description']
     readonly_fields = ['created_at', 'updated_at', 'status', 'target_buyers_display']
     inlines = [ProductImageInline]
     
@@ -56,5 +57,6 @@ class ProductAdmin(admin.ModelAdmin):
 @admin.register(ProductImage)
 class ProductImageAdmin(admin.ModelAdmin):
     list_display = ['product', 'image', 'caption']
-    list_filter = ['product__name']
-    search_fields = ['product__name', 'caption']
+    # use related field lookups that refer to existing fields; product's __str__ provides readable label
+    list_filter = ['product']
+    search_fields = ['product__title', 'caption']

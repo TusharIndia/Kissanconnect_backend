@@ -7,6 +7,8 @@ from django.shortcuts import get_object_or_404
 
 from ..models import Product, Category, ProductImage
 from .serializers import ProductListSerializer, ProductCreateSerializer, ProductUpdateSerializer
+import math
+from typing import Optional
 
 
 @api_view(['GET'])
@@ -95,37 +97,41 @@ def delete_product(request, product_id):
 @permission_classes([IsAuthenticated])
 def get_products_by_buyer_type(request):
     """Get products grouped by target buyer types"""
+    # With new schema, buyer visibility is stored in `buyer_category_visibility` (JSON list)
     products = Product.objects.filter(seller=request.user, is_published=True).prefetch_related('images')
-    
-    # Group products by target buyer type
-    mandi_owners = products.filter(target_mandi_owners=True)
-    shopkeepers = products.filter(target_shopkeepers=True)
-    communities = products.filter(target_communities=True)
-    
-    # Products targeting all buyers (all three types selected)
-    all_buyers = products.filter(
-        target_mandi_owners=True,
-        target_shopkeepers=True,
-        target_communities=True
-    )
+
+    def has_category(prod: Product, cat: str) -> bool:
+        if not prod.buyer_category_visibility:
+            return True  # treat missing visibility as available to all buyers
+        try:
+            return cat in prod.buyer_category_visibility
+        except Exception:
+            return False
+
+    mandi_owners = [p for p in products if has_category(p, 'mandi_owner')]
+    shopkeepers = [p for p in products if has_category(p, 'shopkeeper')]
+    communities = [p for p in products if has_category(p, 'community')]
+
+    # Products available to all (no visibility restrictions)
+    all_buyers = [p for p in products if not p.buyer_category_visibility]
     
     return Response({
         'success': True,
         'products_by_buyer_type': {
             'all_buyers': {
-                'count': all_buyers.count(),
+                'count': len(all_buyers),
                 'products': ProductListSerializer(all_buyers, many=True).data
             },
             'mandi_owners': {
-                'count': mandi_owners.count(),
+                'count': len(mandi_owners),
                 'products': ProductListSerializer(mandi_owners, many=True).data
             },
             'shopkeepers': {
-                'count': shopkeepers.count(),
+                'count': len(shopkeepers),
                 'products': ProductListSerializer(shopkeepers, many=True).data
             },
             'communities': {
-                'count': communities.count(),
+                'count': len(communities),
                 'products': ProductListSerializer(communities, many=True).data
             }
         }
@@ -221,57 +227,85 @@ def get_available_products_for_buyer(request):
     min_quantity = request.GET.get('min_quantity')
     
     # Base queryset - only published products
-    products = Product.objects.filter(is_published=True, quantity_available__gt=0).prefetch_related('images')
-    
-    # Filter based on buyer category
+    products = Product.objects.filter(is_published=True, available_quantity__gt=0).prefetch_related('images')
+
+    # Filter based on buyer category using buyer_category_visibility list
     buyer_category = request.user.buyer_category
-    if buyer_category == 'mandi_owner':
-        products = products.filter(target_mandi_owners=True)
-    elif buyer_category == 'shopkeeper':
-        products = products.filter(target_shopkeepers=True)
-    elif buyer_category == 'community':
-        products = products.filter(target_communities=True)
+    def product_visible_to(p: Product, cat: str) -> bool:
+        if not p.buyer_category_visibility:
+            return True
+        try:
+            return cat in p.buyer_category_visibility
+        except Exception:
+            return False
+
+    products = [p for p in products if product_visible_to(p, buyer_category)]
     
     # Apply additional filters
     if search:
-        products = products.filter(
-            Q(name__icontains=search) | 
-            Q(variety__icontains=search) | 
-            Q(description__icontains=search)
-        )
-    
+        products = [p for p in products if (search.lower() in (p.title or '').lower()) or (p.variety and search.lower() in p.variety.lower()) or (p.description and search.lower() in p.description.lower())]
+
     if unit:
-        products = products.filter(unit__iexact=unit)
+        products = [p for p in products if (p.quantity_unit or '').lower() == unit.lower()]
     
     if min_price:
         try:
             min_price = float(min_price)
-            products = products.filter(price_per_unit__gte=min_price)
+            products = [p for p in products if float(p.price_per_unit) >= min_price]
         except (ValueError, TypeError):
             pass
-    
+
     if max_price:
         try:
             max_price = float(max_price)
-            products = products.filter(price_per_unit__lte=max_price)
+            products = [p for p in products if float(p.price_per_unit) <= max_price]
         except (ValueError, TypeError):
             pass
-    
+
     if min_quantity:
         try:
             min_quantity = float(min_quantity)
-            products = products.filter(quantity_available__gte=min_quantity)
+            products = [p for p in products if float(p.available_quantity) >= min_quantity]
         except (ValueError, TypeError):
             pass
     
     # Order by creation date (newest first)
-    products = products.order_by('-created_at')
-    
+    products = sorted(products, key=lambda p: p.created_at, reverse=True)
+
+    # Optionally compute distance if lat/lon provided in query params
+    lat = request.GET.get('latitude') or request.GET.get('lat')
+    lon = request.GET.get('longitude') or request.GET.get('lon')
+    def haversine_meters(lat1, lon1, lat2, lon2):
+        # Return distance in meters
+        R = 6371000
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlambda = math.radians(lon2 - lon1)
+        a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+        c = 2*math.atan2(math.sqrt(a), math.sqrt(1-a))
+        return int(R * c)
+
+    if lat and lon:
+        try:
+            latf = float(lat)
+            lonf = float(lon)
+            for p in products:
+                if p.latitude is not None and p.longitude is not None:
+                    try:
+                        p.distanceMeters = haversine_meters(latf, lonf, float(p.latitude), float(p.longitude))
+                    except Exception:
+                        p.distanceMeters = None
+                else:
+                    p.distanceMeters = None
+        except Exception:
+            pass
+
     # Serialize the data
     serializer = ProductListSerializer(products, many=True)
     
     # Get available units for filtering
-    available_units = products.values_list('unit', flat=True).distinct()
+    available_units = list({(p.quantity_unit or '') for p in products if p.quantity_unit})
     
     return Response({
         'success': True,
@@ -311,7 +345,6 @@ def get_product_detail_for_buyer(request, product_id):
         product = Product.objects.prefetch_related('images').get(
             id=product_id,
             is_published=True,
-            quantity_available__gt=0
         )
     except Product.DoesNotExist:
         return Response({
@@ -323,12 +356,14 @@ def get_product_detail_for_buyer(request, product_id):
     buyer_category = request.user.buyer_category
     can_purchase = False
     
-    if buyer_category == 'mandi_owner' and product.target_mandi_owners:
+    # Check visibility using buyer_category_visibility
+    if not product.buyer_category_visibility:
         can_purchase = True
-    elif buyer_category == 'shopkeeper' and product.target_shopkeepers:
-        can_purchase = True
-    elif buyer_category == 'community' and product.target_communities:
-        can_purchase = True
+    else:
+        try:
+            can_purchase = buyer_category in product.buyer_category_visibility
+        except Exception:
+            can_purchase = False
     
     if not can_purchase:
         return Response({

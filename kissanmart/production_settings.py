@@ -1,5 +1,6 @@
 import os
 from .settings import *  # noqa: F401,F403 - import base settings
+from django.core.exceptions import ImproperlyConfigured
 
 # Override base settings with production-safe defaults read from environment
 DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('1', 'true', 'yes')
@@ -10,15 +11,17 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', SECRET_KEY)
 # Allowed hosts should be provided via env, comma-separated
 ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', '').split(',') if os.getenv('DJANGO_ALLOWED_HOSTS') else ['localhost']
 
-# Use dj-database-url if DATABASE_URL provided, else keep existing sqlite config
+# Enforce DATABASE_URL in production. We prefer dj-database-url for parsing
 DATABASE_URL = os.getenv('DATABASE_URL')
 if DATABASE_URL:
     try:
         import dj_database_url
         DATABASES['default'] = dj_database_url.parse(DATABASE_URL, conn_max_age=600)
-    except Exception:
-        # If dj-database-url missing or parse error, keep default
-        pass
+    except Exception as exc:
+        raise ImproperlyConfigured(f"Failed to parse DATABASE_URL: {exc}")
+else:
+    # Fail fast in production if no DATABASE_URL is configured
+    raise ImproperlyConfigured('DATABASE_URL must be set in production environment')
 
 # Static files served with WhiteNoise
 MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')  # after SecurityMiddleware
