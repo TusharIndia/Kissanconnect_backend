@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.facebook',
     'users',
     'products',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -219,6 +220,16 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# DRF Spectacular Configuration
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'KissanMart API',
+    'DESCRIPTION': 'API for KissanMart - Connecting Farmers and Buyers',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    # OTHER SETTINGS
 }
 
 # CORS Configuration
