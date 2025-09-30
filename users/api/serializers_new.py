@@ -48,6 +48,8 @@ class ProfileCompletionSerializer(serializers.ModelSerializer):
             'city': {'required': True},
             'state': {'required': True},
             'pincode': {'required': True},
+            'latitude': {'required': True},
+            'longitude': {'required': True},
             'email': {'required': False},
             # social linking removed from profile completion
         }
@@ -86,7 +88,17 @@ class ProfileCompletionSerializer(serializers.ModelSerializer):
         user_type = attrs.get('user_type')
         buyer_category = attrs.get('buyer_category')
     # social tokens are not part of the profile completion payload
-        
+        # require latitude/longitude for all users
+        latitude = attrs.get('latitude')
+        longitude = attrs.get('longitude')
+        if latitude is None or longitude is None:
+            raise serializers.ValidationError({'latitude,longitude': 'Latitude and longitude are required'})
+        try:
+            if not (-90 <= float(latitude) <= 90) or not (-180 <= float(longitude) <= 180):
+                raise serializers.ValidationError({'latitude,longitude': 'latitude must be -90..90 and longitude -180..180'})
+        except (TypeError, ValueError):
+            raise serializers.ValidationError({'latitude,longitude': 'invalid latitude/longitude'})
+
         if user_type == 'smart_buyer' and not buyer_category:
             raise serializers.ValidationError({
                 'buyer_category': 'Smart Buyers must select a buyer category'

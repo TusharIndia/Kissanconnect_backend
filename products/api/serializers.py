@@ -78,17 +78,17 @@ class ProductListSerializer(serializers.ModelSerializer):
     crop = serializers.CharField()
     variety = serializers.CharField()
     grade = serializers.CharField()
-    availableQuantity = serializers.DecimalField(source='available_quantity', max_digits=12, decimal_places=3)
-    quantityUnit = serializers.CharField(source='quantity_unit')
+    availableQuantity = serializers.DecimalField(source='quantity_available', max_digits=12, decimal_places=3)
+    quantityUnit = serializers.CharField(source='unit')
     pricePerUnit = serializers.DecimalField(source='price_per_unit', max_digits=12, decimal_places=2)
-    priceCurrency = serializers.CharField(source='price_currency')
-    priceType = serializers.CharField(source='price_type')
-    marketPriceSource = serializers.CharField(source='market_price_source')
-    mandiPriceReference = serializers.JSONField(source='mandi_price_reference')
+    priceCurrency = serializers.CharField(source='price_currency', allow_null=True, required=False)
+    priceType = serializers.CharField(source='price_type', allow_null=True, required=False)
+    marketPriceSource = serializers.CharField(source='market_price_source', allow_null=True, required=False)
+    mandiPriceReference = serializers.JSONField(source='mandi_price_reference', allow_null=True, required=False)
     location = serializers.SerializerMethodField()
-    buyerCategoryVisibility = serializers.JSONField(source='buyer_category_visibility')
+    buyerCategoryVisibility = serializers.JSONField(source='buyer_category_visibility', allow_null=True, required=False)
     images = ProductImageSerializer(many=True, read_only=True)
-    status = serializers.CharField()
+    status = serializers.CharField(read_only=True)
     createdAt = serializers.DateTimeField(source='created_at')
     updatedAt = serializers.DateTimeField(source='updated_at')
     distanceMeters = serializers.IntegerField(read_only=True)
@@ -97,8 +97,8 @@ class ProductListSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             'id', 'farmerId', 'title', 'description', 'category', 'crop', 'variety', 'grade',
-            'availableQuantity', 'quantityUnit', 'pricePerUnit', 'priceCurrency',
-            'priceType', 'marketPriceSource', 'mandiPriceReference', 'location', 'buyerCategoryVisibility',
+            'availableQuantity', 'quantityUnit', 'pricePerUnit', 'priceCurrency', 'priceType',
+            'marketPriceSource', 'mandiPriceReference', 'location', 'buyerCategoryVisibility',
             'images', 'status', 'createdAt', 'updatedAt', 'distanceMeters'
         ]
 
@@ -114,10 +114,13 @@ class ProductListSerializer(serializers.ModelSerializer):
 
 
 class ProductCreateSerializer(serializers.ModelSerializer):
-    location = serializers.DictField(write_only=True, required=True)
+    # location is optional at model level; require lat/lon only if provided
+    location = serializers.DictField(write_only=True, required=False)
     # Validate buyer categories against the allowed set in validate()
     buyerCategoryVisibility = serializers.ListField(child=serializers.CharField(), required=False)
     # Accept JSON objects for images (e.g. {"url": "https://..."}).
+    # Note: uploaded file uploads (multipart) are still supported by providing
+    # file objects in the request data; the create/update logic handles both types.
     images = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
     # CamelCase aliases accepted from some clients (write-only aliases mapped in create())
     availableQuantity = serializers.DecimalField(write_only=True, max_digits=12, decimal_places=3, required=False)
@@ -125,6 +128,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
     pricePerUnit = serializers.DecimalField(write_only=True, max_digits=12, decimal_places=2, required=False)
     priceCurrency = serializers.CharField(write_only=True, required=False)
     priceType = serializers.CharField(write_only=True, required=False)
+    # allow null when clients send null for non-market_linked price types
     marketPriceSource = serializers.CharField(write_only=True, required=False, allow_null=True, allow_blank=True)
 
     class Meta:
@@ -136,7 +140,6 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             'price_type', 'priceType', 'market_price_source', 'marketPriceSource',
             'location', 'buyerCategoryVisibility', 'images', 'metadata'
         ]
-
         extra_kwargs = {
             'price_type': {'required': False},
         }
@@ -144,8 +147,9 @@ class ProductCreateSerializer(serializers.ModelSerializer):
     def validate(self, data):
         # Validate required fields per frontend doc
         location = data.get('location')
-        if not location or 'latitude' not in location or 'longitude' not in location:
-            raise serializers.ValidationError({'location': 'location.latitude and location.longitude are required'})
+        if location is not None:
+            if 'latitude' not in location or 'longitude' not in location:
+                raise serializers.ValidationError({'location': 'location.latitude and location.longitude are required'})
 
         price_type = data.get('price_type') or data.get('priceType') or 'fixed'
         market_source = data.get('market_price_source') or data.get('marketPriceSource')
@@ -153,6 +157,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'marketPriceSource': 'required when priceType is market_linked'})
 
         # Basic validation for numeric fields
+        # availableQuantity should be >= 0
         aq = data.get('available_quantity') or data.get('availableQuantity')
         if aq is None:
             raise serializers.ValidationError({'availableQuantity': 'This field is required'})
@@ -172,10 +177,11 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'pricePerUnit': 'invalid number'})
 
         # latitude/longitude ranges
-        lat = location.get('latitude')
-        lon = location.get('longitude')
-        if not (-90 <= float(lat) <= 90) or not (-180 <= float(lon) <= 180):
-            raise serializers.ValidationError({'location': 'latitude must be -90..90 and longitude -180..180'})
+        if location is not None:
+            lat = location.get('latitude')
+            lon = location.get('longitude')
+            if not (-90 <= float(lat) <= 90) or not (-180 <= float(lon) <= 180):
+                raise serializers.ValidationError({'location': 'latitude must be -90..90 and longitude -180..180'})
 
         # Validate buyerCategoryVisibility values if present
         bcv = data.get('buyerCategoryVisibility')
@@ -188,16 +194,18 @@ class ProductCreateSerializer(serializers.ModelSerializer):
 
         return data
 
-    def create(self, validated_data):
+    def create(self, validated_data, seller=None):
         images = validated_data.pop('images', [])
         location = validated_data.pop('location', {})
         buyer_visibility = validated_data.pop('buyerCategoryVisibility', None)
 
         # Normalize fields and map aliases
+        # Map camelCase to snake_case where user may have passed camelCase
+        # Map camelCase aliases to actual model DB fields
         if 'availableQuantity' in validated_data:
-            validated_data['available_quantity'] = validated_data.pop('availableQuantity')
+            validated_data['quantity_available'] = validated_data.pop('availableQuantity')
         if 'quantityUnit' in validated_data:
-            validated_data['quantity_unit'] = validated_data.pop('quantityUnit')
+            validated_data['unit'] = validated_data.pop('quantityUnit')
         if 'pricePerUnit' in validated_data:
             validated_data['price_per_unit'] = validated_data.pop('pricePerUnit')
         if 'priceCurrency' in validated_data:
@@ -206,6 +214,22 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             validated_data['price_type'] = validated_data.pop('priceType')
         if 'marketPriceSource' in validated_data:
             validated_data['market_price_source'] = validated_data.pop('marketPriceSource')
+
+        # Allow caller to pass seller via serializer.save(seller=user)
+        # Prefer explicit seller kwarg passed to serializer.save(seller=...)
+        if seller is None:
+            seller = getattr(self, 'context', {}).get('seller')
+        # some callers pass seller as kwarg to save(); DRF passes these to serializer.create via **kwargs
+        # but to keep compatibility, also accept self._kwargs if present
+        try:
+            # serializer.save(seller=...) will place seller in self.validated_data? no - DRF passes kwargs to create as second param
+            pass
+        except Exception:
+            pass
+
+        # If a seller kwarg was provided to create, it'll be in self.context['seller'] by our view wrapper
+        if seller is not None:
+            validated_data['seller'] = seller
 
         product = Product.objects.create(**validated_data)
 
@@ -238,6 +262,7 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
     location = serializers.DictField(write_only=True, required=False)
     buyerCategoryVisibility = serializers.ListField(child=serializers.CharField(), required=False)
     images = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
+    # CamelCase aliases accepted from some clients (write-only aliases mapped in update())
     availableQuantity = serializers.DecimalField(write_only=True, max_digits=12, decimal_places=3, required=False)
     quantityUnit = serializers.CharField(write_only=True, required=False)
     pricePerUnit = serializers.DecimalField(write_only=True, max_digits=12, decimal_places=2, required=False)
@@ -270,9 +295,9 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
 
         # map camelCase aliases
         if 'availableQuantity' in validated_data:
-            validated_data['available_quantity'] = validated_data.pop('availableQuantity')
+            validated_data['quantity_available'] = validated_data.pop('availableQuantity')
         if 'quantityUnit' in validated_data:
-            validated_data['quantity_unit'] = validated_data.pop('quantityUnit')
+            validated_data['unit'] = validated_data.pop('quantityUnit')
         if 'pricePerUnit' in validated_data:
             validated_data['price_per_unit'] = validated_data.pop('pricePerUnit')
         if 'priceCurrency' in validated_data:

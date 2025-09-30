@@ -17,7 +17,6 @@ from urllib.parse import urlparse
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
 # Load .env.local early so values like DATABASE_URL are available to the
 # configuration below when running in development. This uses python-dotenv if
 # installed; if not present, we proceed and expect env vars to be set externally.
@@ -28,6 +27,7 @@ try:
     load_dotenv(DOTENV_PATH)
 except Exception:
     pass
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -98,8 +98,10 @@ WSGI_APPLICATION = 'kissanmart.wsgi.application'
 
 
 # Database
-# https://docs.djangoproject.com/en/5.1/ref/settings/#databases
-
+# This project is configured to use a single canonical database provided via
+# the `DATABASE_URL` environment variable (e.g. a Postgres URL). We intentionally
+# avoid falling back to a local sqlite file to ensure data is stored only on the
+# configured database.
 DATABASES = {}
 
 # Parse DATABASE_URL. dj-database-url is the preferred parser and is included
@@ -131,6 +133,7 @@ if DATABASE_URL:
 # If no DATABASE_URL was provided, we intentionally keep DATABASES empty.
 # Some management commands or local development may expect a DB; developers can
 # create a local `.env.local` with DATABASE_URL set to a local Postgres URL.
+
 
 
 # Password validation

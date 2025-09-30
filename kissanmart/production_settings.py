@@ -16,6 +16,7 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 if DATABASE_URL:
     try:
         import dj_database_url
+
         DATABASES['default'] = dj_database_url.parse(DATABASE_URL, conn_max_age=600)
     except Exception as exc:
         raise ImproperlyConfigured(f"Failed to parse DATABASE_URL: {exc}")

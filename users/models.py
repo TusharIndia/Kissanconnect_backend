@@ -56,13 +56,13 @@ class CustomUser(AbstractUser):
     
     # Address fields - temporarily nullable for migration, will be required in serializers
     address = models.TextField(blank=True, default='')  
-    city = models.CharField(max_length=100, blank=True, default='')  
+    city = models.CharField(max_length=100, default='')  
     state = models.CharField(max_length=100, blank=True, default='')  
     pincode = models.CharField(max_length=10, blank=True, default='')  
     
     # Location coordinates
-    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, default=0.0)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, default=0.0)
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -113,6 +113,8 @@ class CustomUser(AbstractUser):
             self.city,
             self.state,
             self.pincode,
+            self.latitude is not None,
+            self.longitude is not None,
             # For smart buyers, buyer_category is also required
             not (self.user_type == 'smart_buyer' and not self.buyer_category)
         ])

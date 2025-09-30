@@ -6,26 +6,26 @@ from .views import (
     delete_product,
     get_products_by_buyer_type,
     get_product_detail,
-    add_product_images,
-    delete_product_image,
-    get_available_products_for_buyer,
-    get_product_detail_for_buyer
+    list_products,
+    get_mandi_price,
+    get_product_distance,
 )
+
+app_name = 'products_api'
 
 urlpatterns = [
     # Seller Product endpoints (authenticated sellers)
     path('products/', get_seller_products, name='seller-products'),
-    path('add-product/', add_product, name='add-product'),
-    path('products/<int:product_id>/', get_product_detail, name='product-detail'),
-    path('products/<int:product_id>/update/', update_product, name='update-product'),
-    path('products/<int:product_id>/delete/', delete_product, name='delete-product'),
+    path('products/create/', add_product, name='add-product'),
+    path('products/<uuid:uuid>/', get_product_detail, name='product-detail'),
+    path('products/<uuid:uuid>/update/', update_product, name='update-product'),
+    path('products/<uuid:uuid>/delete/', delete_product, name='delete-product'),
     path('products-by-buyer-type/', get_products_by_buyer_type, name='products-by-buyer-type'),
-    
-    # Image management endpoints (sellers)
-    path('products/<int:product_id>/add-images/', add_product_images, name='add-product-images'),
-    path('products/<int:product_id>/images/<int:image_id>/delete/', delete_product_image, name='delete-product-image'),
-    
-    # Buyer Product endpoints (authenticated buyers)
-    path('available-products/', get_available_products_for_buyer, name='available-products-for-buyer'),
-    path('available-products/<int:product_id>/', get_product_detail_for_buyer, name='product-detail-for-buyer'),
+
+    # Image management removed: images handled via create/update payloads
+
+    # Public product listing and mandi price
+    path('products/list/', list_products, name='product-list'),
+    path('products/<uuid:uuid>/mandi-price/', get_mandi_price, name='product-mandi-price'),
+    path('products/<uuid:uuid>/distance/', get_product_distance, name='product-distance'),
 ]
