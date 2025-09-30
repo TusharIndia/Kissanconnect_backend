@@ -40,7 +40,11 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-n-#+*mpf*gz!(3)u_)^
 DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('1', 'true', 'yes')
 
 # ALLOWED_HOSTS can be provided as comma-separated list in env
-ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', '').split(',') if os.getenv('DJANGO_ALLOWED_HOSTS') else []
+ALLOWED_HOSTS = ['kissanconnect-backend.onrender.com']
+if os.getenv('DJANGO_ALLOWED_HOSTS'):
+    ALLOWED_HOSTS.extend(os.getenv('DJANGO_ALLOWED_HOSTS').split(','))
+else:
+    ALLOWED_HOSTS.extend(['localhost', '127.0.0.1'])
 
 
 # Application definition
