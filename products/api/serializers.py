@@ -147,7 +147,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
     def validate(self, data):
         # Validate required fields per frontend doc
         location = data.get('location')
-        if location is not None:
+        if location is not None and location:
             if 'latitude' not in location or 'longitude' not in location:
                 raise serializers.ValidationError({'location': 'location.latitude and location.longitude are required'})
 
@@ -176,12 +176,13 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         except (TypeError, ValueError):
             raise serializers.ValidationError({'pricePerUnit': 'invalid number'})
 
-        # latitude/longitude ranges
-        if location is not None:
+        # latitude/longitude ranges if provided
+        if location is not None and location:
             lat = location.get('latitude')
             lon = location.get('longitude')
-            if not (-90 <= float(lat) <= 90) or not (-180 <= float(lon) <= 180):
-                raise serializers.ValidationError({'location': 'latitude must be -90..90 and longitude -180..180'})
+            if lat is not None and lon is not None:
+                if not (-90 <= float(lat) <= 90) or not (-180 <= float(lon) <= 180):
+                    raise serializers.ValidationError({'location': 'latitude must be -90..90 and longitude -180..180'})
 
         # Validate buyerCategoryVisibility values if present
         bcv = data.get('buyerCategoryVisibility')
@@ -233,11 +234,15 @@ class ProductCreateSerializer(serializers.ModelSerializer):
 
         product = Product.objects.create(**validated_data)
 
-        # attach location
+        # attach location - use seller's location if not provided
+        if not location.get('latitude') or not location.get('longitude'):
+            if seller and hasattr(seller, 'latitude') and hasattr(seller, 'longitude'):
+                location['latitude'] = seller.latitude
+                location['longitude'] = seller.longitude
         product.latitude = location.get('latitude')
         product.longitude = location.get('longitude')
-        product.address = location.get('address')
-        product.pincode = location.get('pincode')
+        product.address = location.get('address') or (seller.address if seller else '')
+        product.pincode = location.get('pincode') or (seller.pincode if seller else '')
         if buyer_visibility is not None:
             product.buyer_category_visibility = buyer_visibility
         product.save()

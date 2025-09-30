@@ -59,13 +59,10 @@ def add_product(request):
     if request.user.user_type != 'smart_seller' and not getattr(request.user, 'is_staff', False):
         return Response({'error': {'code': 'FORBIDDEN', 'message': 'Only smart_seller accounts may create products'}}, status=status.HTTP_403_FORBIDDEN)
 
-    # For smart_seller require latitude/longitude in location payload so products have loc
-    if request.user.user_type == 'smart_seller':
-        loc = request.data.get('location') or {}
-        if not loc or loc.get('latitude') in (None, '') or loc.get('longitude') in (None, ''):
-            return Response({'error': {'code': 'VALIDATION_ERROR', 'message': 'latitude and longitude required in location for smart_seller accounts'}}, status=status.HTTP_400_BAD_REQUEST)
+    # Prepare data for serializer - no longer require location for smart_seller
+    data = request.data.copy()
 
-    serializer = ProductCreateSerializer(data=request.data)
+    serializer = ProductCreateSerializer(data=data)
     if serializer.is_valid():
         product = serializer.save(seller=request.user)
         return Response(ProductListSerializer(product).data, status=status.HTTP_201_CREATED)
