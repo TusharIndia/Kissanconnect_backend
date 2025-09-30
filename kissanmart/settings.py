@@ -245,7 +245,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://kissanmart-frontend.vercel.app",
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False  # Changed to False for security; only allow specified origins
 # Note: Added https://kissanmart-frontend.vercel.app to CORS_ALLOWED_ORIGINS
 
 # Additional CORS settings for better frontend integration
